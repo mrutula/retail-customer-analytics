@@ -1,0 +1,823 @@
+# Data Science and Multilingual NLP — 16-Week Curriculum
+
+Sep 24, 2026 · @mru
+
+## Objective
+
+In weeks 8–16, build one multilingual system that extracts entities from documents and answers questions over them, with a per-language evaluation for every component.
+
+**Final deliverable:** a GitHub repo with a FastAPI service (`/extract`, `/ask`), a one-command eval suite, and a README containing the architecture diagram, results tables, and one design decision memo.
+
+```mermaid
+flowchart LR
+    D[Documents<br/>4 languages] --> E[Entity extraction<br/>fine-tuned XLM-R vs LLM]
+    D --> R[Retrieval<br/>BM25 / bi-encoder]
+    R --> RR[Cross-encoder<br/>reranker]
+    RR --> G[LLM answer<br/>generation]
+    G --> F[Faithfulness +<br/>correctness eval]
+    E --> M[Per-language<br/>F1 eval]
+```
+
+Every box is a week of work, and every box is an interview topic.
+
+**What it proves in an interview:**
+
+- Classic NLP depth: tokenization, fine-tuning, token classification, cross-lingual transfer.
+- Retrieval depth: sparse vs dense, bi-encoder vs cross-encoder, retrieval metrics.
+- Eval depth: faithfulness built from scratch, and a judge you validated against human labels.
+- Senior judgement: a measured "fine-tuned model vs LLM" decision on cost, latency and accuracy.
+
+It answers both Elsevier questions you missed: the cross-encoder and faithfulness code, and the multilingual extraction design.
+
+## Sequence
+
+Traditional ML and statistics fundamentals come first (weeks 1–7), then the multilingual project (weeks 8–16). One track at a time, with a buffer week built in. Why this order: most UK data scientist interviews test GLMs, segmentation, hypothesis testing and experiment design in the first technical round. Your GenAI work is what makes you stand out, but these topics are what get you through that round, so they come first.
+
+| Phase | Weeks | Focus |
+| --- | --- | --- |
+| 1 | 1–7 | Traditional ML and statistics fundamentals, then a buffer week |
+| 2 | 8–11 | Project setup and classic NLP |
+| 3 | 12–13 | Retrieval and evaluation |
+| 4 | 14–16 | Senior judgement and interview conversion |
+
+## Rules
+
+**Time budget:** 8–10 hours a week alongside work. A free Colab T4 GPU is enough for every week.
+
+**Weekly rhythm** (your learn → implement → rebuild blind loop):
+
+| Days | Activity | Time |
+| --- | --- | --- |
+| Mon–Tue | Read the week's sources, take notes by hand or in your own words | 2–3 h |
+| Wed–Thu | Build the week's component into the repo, with tests | 3–4 h |
+| Fri | Rebuild the week's "blind" item from an empty file, timed, no AI, no docs | 1 h |
+| Weekend | Answer the week's interview question out loud (5 min, recorded), then weekly retro | 1–2 h |
+
+**AI usage rule:** AI can explain concepts, help debug *after* you've been stuck for 20 minutes, and review work you've finished. It never writes the week's core component. If AI writes it, the week doesn't count.
+
+**Done means done:** a week is finished only when its "Done when" criteria are met and pushed. Don't start the next week early.
+
+**Low-energy weeks:** if health or work flattens you, do the minimum: the blind rebuild plus 30 minutes of reading. The week stretches, and the plan doesn't restart.
+
+**Buffer weeks:** week 7 is a buffer for catching up, resting or a mock interview, never new material. If you're more than a week behind by week 13, take a second buffer before week 14.
+
+**Languages:** English, German, Hindi, Arabic. That's two Latin-script languages, one Devanagari and one right-to-left script, which exposes the real multilingual problems. All four are in both datasets.
+
+**Datasets:**
+
+- **Online Retail II (UCI):** about 1M transactions from a UK online wholesaler of giftware, many of whose customers are businesses. The basis of the churn project (weeks 1–3 and 7), the customer value models (week 4), the segmentation (week 5) and the real-data tests (week 6).
+- **WikiANN (PAN-X)** on Hugging Face: NER with PER/ORG/LOC tags across many languages. Used in weeks 10–11 and 14.
+- **XQuAD**: the same paragraphs and questions professionally translated into 11 languages. Your retrieval corpus and QA gold set for weeks 12–13.
+
+Use subsets (for example 5k training sentences per language) to keep training runs under 30 minutes.
+
+## Working practice
+
+### Repo layout for weeks 1–7
+
+```
+retail-customer-analytics/
+├── data/raw/            # the original Excel file, never edited (gitignored)
+├── data/processed/      # cleaned parquet files your code writes (gitignored)
+├── notebooks/
+│   ├── 01_cleaning.ipynb
+│   ├── 02_snapshots_and_labels.ipynb
+│   ├── 03_churn_baseline.ipynb
+│   └── ...
+├── src/retail/
+│   ├── data.py          # loading and cleaning
+│   ├── snapshots.py     # features and labels for a cut-off date
+│   └── evaluate.py      # metrics and results logging
+├── tests/
+│   └── test_snapshots.py
+├── results.csv
+└── README.md
+```
+
+### Notebooks vs .py files
+
+- **`.py` files in `src/`** hold logic that must be correct and is reused: cleaning, snapshot building, metrics. Notebooks import from them, for example `from retail.snapshots import build_snapshot`. A function in a `.py` file can be tested with pytest and is identical everywhere it's used. Code copied between notebook cells drifts apart. Search: "python src layout pip install -e", "jupyter autoreload local module".
+- **Notebooks** hold exploration, plots and the written explanation of each step.
+- **The number prefix is the run order.** `02_snapshots_and_labels` reads the parquet file that `01_cleaning` writes, so 01 must run before 02. Someone opening the repo reads them in that order.
+- **"Runs top to bottom" means:** before every commit, use Kernel → Restart Kernel and Run All Cells. If any cell errors, or any number differs from what you saw while working, fix it before committing. In a notebook you can run cells out of order, or delete a cell whose variable still sits in memory. The notebook then shows results that nobody, including you next week, can reproduce. Restart and Run All proves the notebook works from a clean start.
+- **Blind rebuilds** go in a separate private folder as plain `.py` files, written in an editor with autocomplete and AI assistants turned off. Interviews usually use a bare editor such as CoderPad.
+
+### Git
+
+Commit at the end of every session with a message saying what changed. Data never goes into git: add `data/` to `.gitignore`.
+
+### results.csv
+
+Every model evaluation appends one row: date, week, model, feature set, training cut-offs, evaluation cut-offs, metric, value, notes. Your comparison tables are built from this file, not from memory.
+
+### Checking your own work
+
+You don't have a reviewer, so every week has a **Check your work** list. Five rules sit behind all of them:
+
+1. **Hand-check 3 examples.** Pick 3 customers, look at their raw transactions, and compute their features and label by hand. Your code must give the same numbers.
+2. **Beat a dumb baseline.** Every model is compared with something trivial, such as predicting the majority class or using one feature. If a model can't beat it, it isn't working.
+3. **Too good is a red flag.** A churn ROC-AUC above about 0.95 usually means leakage, not a great model. Investigate before celebrating.
+4. **Every rule becomes an assert or a test.** If the README says "no feature uses data after the cut-off", a pytest test proves it.
+5. **Ask for review after, not before.** When a week is done, paste the README section and key code to Claude and ask what's wrong. That's review, which the AI rule allows.
+
+## Phase 1 — Traditional ML and statistics fundamentals (weeks 1–7)
+
+Main source: *An Introduction to Statistical Learning with Python* (ISLP), free at statlearning.com. Read the chapter, run its lab, then build that week's piece of the churn project. The target is being able to explain it without notes, not memorising maths.
+
+**Videos:** search "StatQuest" plus each topic listed under Watch.
+
+**Session plan for each week.** The 45-minute limit is per reading session, not per week:
+
+| Session | What you do | Time |
+| --- | --- | --- |
+| 1 | Watch the videos, skim the chapter's headings and figures | 45 min |
+| 2–3 | Read the "Read" sections, write 5 lines per section without the book | 45 min each |
+| 4 | ISLP lab: run only the listed parts, change one thing | 30–45 min |
+| 5–6 | Build on the week's dataset | 60–90 min each |
+| 7 | Blind rebuild, timed | 45 min |
+| 8 | Interview question out loud, then retro | 30 min |
+
+The ISLP labs use statsmodels and ISLP's own package, while your build uses scikit-learn. The lab is only for seeing the concept work. Don't aim to finish it perfectly.
+
+**Skipping rule for anything not listed:** mostly equations or proofs → skip. Statistical tests → skip, except in week 6, where they're the point. A figure showing how a model behaves → read.
+
+### Core concept: the snapshot
+
+A churn model is used like this: on a given day, the business asks "of the customers active right now, who will stop buying?" The model can only use what was known on that day. A **snapshot** recreates that situation in historical data. It has five parts:
+
+- **Cut-off date:** the "today" you're pretending it is, for example 1 March 2011.
+- **Observation window:** the period before the cut-off that features come from. In this plan, the 180 days before the cut-off.
+- **Outcome window:** the period after the cut-off that the label comes from. In this plan, the 90 days starting on the cut-off.
+- **Population:** who gets a row. In this plan, customers with at least one purchase in the observation window.
+- **Label:** churned = 1 if the customer makes no purchase in the outcome window, otherwise 0.
+
+One snapshot is one table with one row per active customer: features from before the cut-off, label from after it.
+
+```
+   observation window: 180 days            outcome window: 90 days
+|--------------------------------------|----------------------------|
+2010-09-02                    2011-03-01 (cut-off)            2011-05-30
+   features use only these dates           the label uses only these dates
+```
+
+**Why it matters:** if any feature uses a transaction on or after the cut-off, the model has seen the future during training. This is **leakage**, and it makes every score fake. The classic mistake is computing recency from each customer's last purchase in the whole dataset. For a customer who bought again in April, that number already contains the answer.
+
+**Multiple snapshots:** from week 2 you build one snapshot per month, with cut-offs on the 1st. The same customer appears in many snapshots, each time with features and a label as of that date. That gives more training rows, and it lets you test the model on later dates than it was trained on, which is how it would be used for real.
+
+**Date limits in this dataset:** transactions run from 1 Dec 2009 to 9 Dec 2011. The earliest usable cut-off is 1 June 2010, the first month start with 180 days of history behind it. The latest is 1 Sept 2011, the last month start with 90 days of outcome before the data ends. That gives 16 monthly cut-offs.
+
+**Search:** "churn prediction observation window outcome window", "point-in-time correct features", "target leakage machine learning".
+
+### Week 1 — Bias–variance, linear and logistic regression
+
+**Objective:** explain what a model is actually learning, and why it over- or underfits.
+
+**Watch:** Bias and Variance · Linear Regression · Odds and Log(Odds) · Logistic Regression (main ideas video only).
+
+**Read:**
+
+- Ch 2: 2.1 in full, and 2.2.1–2.2.2 (MSE, bias–variance tradeoff).
+- Ch 3: 3.1.1 (estimating coefficients), 3.2 in full, 3.3.1–3.3.3 (qualitative predictors, interactions, potential problems).
+- Ch 4: 4.1–4.3 (logistic regression).
+
+**Skip or skim:**
+
+- Ch 2: skim 2.2.3 (Bayes classifier, KNN).
+- Ch 3: skim 3.1.2–3.1.3 (standard errors, t-statistics, R²), just knowing what R² means. Skip 3.4 and 3.5.
+- Ch 4: skim 4.3.5 (multinomial). Skip 4.4–4.6 for now.
+
+**Lab:** the linear regression lab, simple and multiple regression parts only.
+
+**Build, step by step:**
+
+**Step 1 — Load and combine.** The Excel file has two sheets, 2009–2010 and 2010–2011. Read both (`pd.read_excel(path, sheet_name=None)` returns a dict of all sheets), concatenate them, and save as parquet so you never reload the slow Excel file. Check whether the sheets' date ranges overlap. If they do, remove the duplicated rows. Search: "pandas read\_excel all sheets", "pandas to\_parquet".
+
+**Step 2 — Clean, and log every decision.** For each rule below, record how many rows it removes. That table goes in the README, because an interviewer will ask what you removed and why.
+
+- **No Customer ID:** these rows can't be assigned to a customer. Drop them for this project.
+- **Cancellations:** the Invoice starts with "C". Move them to a separate `returns` table. They feed the return-rate feature and are never counted as purchases.
+- **Non-product stock codes:** list the StockCodes that aren't normal product codes (examples include POST, DOT, M, BANK CHARGES, AMAZONFEE and D). Decide each one by reading its Description, then exclude them from purchases.
+- **Price ≤ 0, or Quantity ≤ 0 on a non-cancelled invoice:** inspect a few, then exclude.
+- **Exact duplicate rows:** drop.
+- Add `line_value = Quantity × Price`.
+
+**Step 3 — Write `build_snapshot(purchases, returns, cutoff)` in `src/retail/snapshots.py`.** It returns one row per customer with at least one purchase in the 180 days before `cutoff`. Every feature uses only rows with `InvoiceDate < cutoff`:
+
+| Feature | Exact definition |
+| --- | --- |
+| `recency_days` | days from the customer's last purchase before the cut-off to the cut-off |
+| `frequency_180d` | number of distinct purchase invoices in the observation window |
+| `monetary_180d` | sum of `line_value` in the observation window |
+| `aov_180d` | `monetary_180d ÷ frequency_180d` (average order value) |
+| `tenure_days` | days from the customer's first purchase in the data to the cut-off. The data starts on 1 Dec 2009, so tenure is capped. Note this as a limitation. |
+| `spend_trend` | spend in the 90 days before the cut-off minus spend in the 90 days before that |
+| `product_breadth` | number of distinct StockCodes bought in the observation window |
+| `return_rate` | absolute value of cancelled line values in the window ÷ `monetary_180d` |
+| `is_uk` | 1 if Country is United Kingdom, else 0 |
+
+The label: `churned = 1` if the customer has no purchase invoice with `cutoff <= InvoiceDate < cutoff + 90 days`, otherwise 0. Note the `<=`: a purchase on the cut-off date belongs to the outcome, not the features.
+
+**Step 4 — Test it.** In `tests/test_snapshots.py`, build a tiny fake purchases table (about 10 rows, 3 customers) where you know every right answer, and assert the features and labels. Include one purchase exactly on the cut-off date and assert it changes the label but not the features. Search: "pytest pandas DataFrame test", "pandas.testing assert\_frame\_equal".
+
+**Step 5 — Build one snapshot** at cut-off 2011-03-01. Record the number of customers and the churn rate.
+
+**Step 6 — Baselines, then the model.** Use a stratified 80/20 random split of this one snapshot for now (week 2 replaces it with a time-based split). Fit three models and log the ROC-AUC of each to `results.csv`:
+
+1. `DummyClassifier(strategy="prior")`, which always predicts the overall churn rate.
+2. Logistic regression on `recency_days` alone.
+3. A `Pipeline` of `StandardScaler` then `LogisticRegression` on all features.
+
+Then try `np.log1p` on `monetary_180d`, `frequency_180d` and `aov_180d` and compare. These features have long right tails, which distort a linear model. Search: "sklearn Pipeline StandardScaler LogisticRegression", "sklearn DummyClassifier", "log transform skewed features logistic regression".
+
+**Step 7 — Interpret coefficients.** With standardised features, each coefficient is the change in log-odds for a one-standard-deviation increase in that feature, and `exp(coefficient)` is the odds ratio. Write 3 in plain English, for example: "one standard deviation more days since the last purchase multiplies the odds of churning by 1.8". Search: "logistic regression coefficient odds ratio interpretation".
+
+**Check your work:**
+
+- Your pytest test passes, including the purchase on the cut-off date.
+- Hand-check 3 customers from the 2011-03-01 snapshot against their raw transactions: every feature and the label.
+- The churn rate is plausible. Below 5% or above 95% almost always means a wrong filter or date comparison.
+- `recency_days` is never negative, and no customer has `frequency_180d = 0`.
+- The `recency_days` coefficient is positive (longer since the last purchase means more likely to churn) and `frequency_180d` is negative. If either is the other way round, check the feature code before anything else.
+- The full model beats both baselines. If its ROC-AUC is above about 0.95, look for leakage first.
+
+**Done when:** the cleaning table, the snapshot definition and the feature table are in the README; the tests pass; the three models (plus the log-transformed version) are in `results.csv`; and 3 coefficients are explained in plain English.
+
+**Blind rebuild:** from an empty file, write `build_snapshot` for recency, frequency and monetary only, given a purchases DataFrame and a cut-off date, plus the label. Then split, pipeline and logistic regression. Target: 30 minutes.
+
+**Interview question:** "Explain the bias–variance tradeoff with an example from your own work."
+
+### Week 2 — Evaluation, resampling and imbalance
+
+**Objective:** know when a metric is lying to you.
+
+**Watch:** Cross Validation · The Confusion Matrix · Sensitivity and Specificity · ROC and AUC · Bootstrapping Main Ideas.
+
+**Read:**
+
+- Ch 5: 5.1 in full (validation set, LOOCV, k-fold, bias–variance of k-fold).
+- The scikit-learn user guide, "Model evaluation": only the confusion matrix, precision/recall/F1 and ROC sections.
+
+**Skip or skim:** Ch 5: skim 5.2 (bootstrap). The idea matters, the maths doesn't.
+
+**Lab:** the cross-validation part of the resampling lab.
+
+**Build, step by step:**
+
+**Step 1 — Build all 16 snapshots.** Run `build_snapshot` for every month-start cut-off from 2010-06-01 to 2011-09-01, add a `cutoff` column, and stack them into one table. Record the rows and churn rate for each cut-off and plot churn rate against cut-off date. Expect seasonality: an outcome window that covers the pre-Christmas peak behaves differently from one in spring.
+
+**Step 2 — Fix your split once, and use it for weeks 2–4.** A snapshot's label is only known 90 days after its cut-off. So a model used on date T can only be trained on cut-offs whose outcome window has ended by T. This is the **gap rule**. Ignoring it leaks future information into training.
+
+| Use | Cut-offs | Why these dates |
+| --- | --- | --- |
+| Train (for tuning) | 2010-06-01 → 2010-12-01 | outcome windows end by 2011-03-01 |
+| Validation | 2011-03-01 → 2011-05-01 | used to compare models and choose settings |
+| Final train | 2010-06-01 → 2011-03-01 | outcome windows end by 2011-06-01 |
+| Test | 2011-06-01 → 2011-09-01 | used once, at the end of week 3 |
+
+Add an assert to your code: for every training cut-off, `cutoff + 90 days <= first evaluation cut-off`. Search: "time based train test split leakage gap", "temporal validation churn model".
+
+**Step 3 — Compare validation strategies.** Using only the training rows, run (a) 5-fold stratified CV with rows shuffled at random and (b) `GroupKFold` with customer ID as the group. Compare both with the time-based validation score. Explain the gap in the README: random folds put the same customer, at neighbouring cut-offs with nearly identical features, in both train and test. Search: "sklearn GroupKFold", "cross validation leakage repeated customers".
+
+**Step 4 — Metrics.** On the validation snapshots: confusion matrix at threshold 0.5, precision, recall, F1, ROC-AUC, and PR-AUC (`average_precision_score`). A random model's PR-AUC equals the churn rate, so write that baseline next to your number. Search: "precision recall curve vs ROC curve imbalanced", "average precision baseline prevalence".
+
+**Step 5 — Imbalance.** Compare (a) no adjustment, (b) `class_weight="balanced"`, and (c) random oversampling of churners with imbalanced-learn's `RandomOverSampler`, placed inside an imbalanced-learn `Pipeline` so only training data is resampled. If your churn rate is between about 30% and 70%, these will change little. Record that, because it's a valid finding. Note that (b) and (c) push predicted probabilities upward, so they stop being real probabilities. Step 6 needs real probabilities, so use the unadjusted model there. Search: "imblearn pipeline oversampling only training data", "class\_weight balanced effect on predicted probabilities".
+
+**Step 6 — Choose a threshold from a cost model.** Write these assumptions in the README and label them as assumptions:
+
+- `c` = cost of a retention offer per targeted customer, for example £5.
+- `v` = value of keeping a customer = `monetary_180d × m`, where `m` is the profit margin, for example 30%.
+- `s` = save rate: the share of would-be churners who stay because of the offer, for example 20%.
+
+For a threshold `t`, you target every customer with predicted probability `p ≥ t`. On validation, using the actual labels `y`, the value of the campaign is the sum over targeted customers of `(y × s × v − c)`. Calculate it for thresholds from 0 to 1 in steps of 0.01, plot it, and pick the maximum. Repeat with `s` = 10% and 30% to see how sensitive the choice is. Search: "profit curve classification threshold", "cost-sensitive threshold selection churn".
+
+**Check your work:**
+
+- You have 16 snapshots and none is empty.
+- The gap-rule assert passes.
+- Random k-fold usually scores higher than time-based validation. If it's lower, check the split code.
+- Precision, recall and F1 calculated by hand from the confusion matrix match scikit-learn's.
+- Profit curve endpoints: at threshold above 1 (target nobody) the value is 0. At threshold 0 (target everyone) it equals `sum(y × s × v) − (number of customers × c)`. Check both numerically.
+
+**Done when:** the split table and gap rule are in the README, along with the comparison table (random vs grouped vs time-based), the validation metrics table, the imbalance comparison, the profit curve, and the chosen threshold with its sensitivity results.
+
+**Blind rebuild:** precision, recall and F1 from a confusion matrix in numpy, and k-fold CV written by hand without `cross_val_score`.
+
+**Interview question:** "Your classifier has 97% accuracy. Is it good?"
+
+### Week 3 — Regularisation, trees, boosting and explainability
+
+**Objective:** know which model to reach for on tabular data, and why.
+
+**Watch:** Ridge Regression · Lasso Regression · Decision and Classification Trees · Random Forests Part 1 · Gradient Boost Part 1 and Part 3 (classification).
+
+**Read:**
+
+- Ch 6: 6.2 in full (ridge, lasso, choosing lambda).
+- Ch 8: 8.1 in full (trees) and 8.2.1–8.2.3 (bagging, random forests, boosting).
+
+**Skip or skim:**
+
+- Ch 6: skip 6.1 (subset selection) and 6.3 (PCR/PLS). Skim 6.4 (high dimensions).
+- Ch 8: skip 8.2.4 (BART).
+
+**Lab:** the ridge/lasso part of the Ch 6 lab, and the random forest and boosting parts of the Ch 8 lab.
+
+**Explainability, in plain English:** feature importance tells you what matters to the model overall. **SHAP** goes further: it splits a single prediction into a contribution from each feature. That lets you say "this customer is high risk mainly because they haven't ordered in 120 days, partly offset by high spend". Insurers and other regulated businesses need this for **model governance**, because they must be able to explain why a model made a decision about a customer.
+
+**Explainability reading:** *Interpretable Machine Learning* (Christoph Molnar, free online), the SHAP chapter: the introduction and examples only, skipping the maths. Then the `shap` library's README.
+
+**Build, step by step.** Tune every model on the week 2 train and validation snapshots. Don't use `GridSearchCV` with its default folds, because they're random and break the time split. Either loop over a small grid yourself or pass a `PredefinedSplit`. Search: "sklearn PredefinedSplit".
+
+**Step 1 — Regularised logistic regression.** Fit L2 and L1 logistic regression (L1 needs `solver="saga"` or `"liblinear"`) for 20 values of `C` spaced logarithmically from 0.001 to 100. `C` is the *inverse* of regularisation strength, so a small `C` means strong shrinkage. Plot each coefficient against `C` and note which features L1 drops to zero first. Choose `C` on validation PR-AUC. Search: "logistic regression regularization path sklearn", "C inverse regularization strength".
+
+**Step 2 — Decision tree.** Vary `max_depth` from 2 to 10 and plot training and validation scores on one chart. This is bias–variance made visible. Draw the depth-3 tree with `plot_tree` and read its splits in plain English.
+
+**Step 3 — Random forest.** Use 300 trees and tune `max_depth`, `min_samples_leaf` and `max_features`.
+
+**Step 4 — Gradient boosting.** Use `HistGradientBoostingClassifier` or LightGBM. Tune `learning_rate`, `max_leaf_nodes` and `l2_regularization`, and use early stopping to choose the number of trees. Search: "gradient boosting learning rate vs number of trees", "HistGradientBoostingClassifier early stopping".
+
+**Step 5 — Importance.** Compare impurity importance (`feature_importances_`) with `permutation_importance` measured on validation. Explain any disagreement: impurity importance is computed on training data and inflates features with many distinct values, such as `monetary_180d`. Search: "impurity vs permutation feature importance bias".
+
+**Step 6 — Final test, once.** Choose one model. Retrain it on the final-train cut-offs and evaluate it once on the test cut-offs. Report the test metrics and the week 2 campaign value at your chosen threshold. Don't change anything after seeing the test result.
+
+**Step 7 — SHAP.** Explain the chosen model on test rows: a beeswarm summary plot for the whole model, and a waterfall plot for one high-risk customer. `shap.TreeExplainer` supports LightGBM directly. If it errors on scikit-learn's HistGradientBoosting, use LightGBM for this step. Search: "shap TreeExplainer LightGBM beeswarm waterfall".
+
+**Check your work:**
+
+- Tree depth chart: the training score keeps rising while the validation score peaks and then falls. If both rise together, check that you aren't scoring on training rows.
+- L1 at the smallest `C` sets nearly all coefficients to zero. At the largest `C` it matches unregularised logistic regression.
+- The test score is close to the validation score. A big drop means you tuned too hard on validation.
+- The SHAP direction for `recency_days` and `frequency_180d` matches the week 1 coefficient signs. If not, find out why before writing it up.
+- If the best model beats logistic regression by less than about 0.01 ROC-AUC, your justification should seriously consider choosing logistic regression for its simplicity.
+
+**Done when:** you have the validation comparison table for all models; one model is chosen with a paragraph of justification that isn't just "highest AUC"; the test result is reported once; the importance comparison is written up; the top churn drivers are explained in business language; and one high-risk customer is explained in plain English using SHAP.
+
+**Blind rebuild:** Gini impurity and the best split for one numeric feature, from scratch.
+
+**Interview question:** "Random forest vs gradient boosting: how do they differ, and when would you use each?"
+
+### Week 4 — GLMs: predicting counts and money amounts
+
+**Objective:** model counts and money amounts properly, the way insurers model claims.
+
+**In plain English:** linear regression assumes the target can be any number, negative included, with errors shaped like a bell curve. Real business targets often aren't like that:
+
+- **Counts** (orders, claims) are whole numbers, never negative, and mostly small.
+- **Money amounts** (order value, claim cost) are always positive, with a long tail of a few very large values.
+
+A generalised linear model (GLM) keeps week 1's idea, adding up features times weights, and changes two things:
+
+1. **The distribution** you assume for the target: Poisson for counts, Gamma for positive amounts.
+2. **The link function**, which converts the weighted sum into a prediction. A log link means prediction = exp(weighted sum), so predictions can never be negative.
+
+You already know one GLM: logistic regression is a GLM with a binomial distribution and a logit link.
+
+With a log link, each coefficient becomes a **multiplier**. If a coefficient is 0.04, exp(0.04) = 1.04, so each extra unit of that feature multiplies the prediction by 1.04, which is a 4% increase. This is how GLMs are explained to business people.
+
+**Why it matters:** insurers price policies as **frequency × severity**. Frequency is how many claims to expect (a Poisson GLM). Severity is how much each claim costs (a Gamma GLM). Expected cost = frequency × severity. A **Tweedie** GLM models expected cost in one step instead. Any insurer interview can ask about this.
+
+**Watch:** search "Poisson regression explained" and "generalized linear models explained". StatQuest covers these less well than other topics, so any clear video under 20 minutes is fine.
+
+**Read:**
+
+- ISLP Ch 4: 4.6 in full (generalised linear models, including Poisson regression on the Bikeshare data).
+- The scikit-learn user guide, "Generalized Linear Models": the usage section and the table of which distribution suits which target.
+- The scikit-learn examples "Poisson regression and non-normal loss" and "Tweedie regression on insurance claims". The second uses real French motor insurance data and shows frequency × severity end to end. Read the text and plots; don't run it all.
+
+**Skip or skim:** the maths of how GLMs are fitted (iteratively reweighted least squares). Knowing it exists is enough.
+
+**Lab:** the Poisson regression part of the Ch 4 lab.
+
+**Build, step by step.** Use the same snapshot table and the same train, validation and test cut-offs as weeks 2–3.
+
+**Step 1 — New targets from the outcome window** (`cutoff <= InvoiceDate < cutoff + 90 days`):
+
+- `orders_next90`: the number of distinct purchase invoices. It's 0 for churners.
+- `aov_next90`: purchase value in the outcome window ÷ `orders_next90`. Only defined for customers with at least one order.
+
+Assert that `orders_next90 == 0` exactly where `churned == 1`.
+
+**Step 2 — Frequency model.** Fit a `Pipeline` of `StandardScaler` then `PoissonRegressor` on all rows, predicting `orders_next90`. Tune `alpha` (the regularisation strength) on validation, starting very small, for example 1e-4. Fit `LinearRegression` on the same target and count how many of its predictions are negative. Search: "sklearn PoissonRegressor alpha", "why not linear regression for count data".
+
+**Step 3 — Severity model.** Fit `GammaRegressor` on rows with `orders_next90 ≥ 1` and `aov_next90 > 0`, predicting `aov_next90`. Pass `sample_weight=orders_next90`, because an average over 10 orders is more reliable than one order. The scikit-learn insurance example does the same with claim counts. Search: "GammaRegressor severity sample\_weight number of claims".
+
+**Step 4 — Expected spend** = predicted orders × predicted average order value, for every customer. Compare it with actual spend in the outcome window on the test cut-offs.
+
+**Step 5 — Evaluate.** Use `mean_poisson_deviance` for frequency and `mean_gamma_deviance` for severity, plus MAE because it's in readable units. Compare each against `DummyRegressor(strategy="mean")`.
+
+**Step 6 — Calibration table.** Split test customers into 10 equal groups by predicted value (`pd.qcut(predictions, 10)`), and compare the average predicted with the average actual in each group.
+
+**Step 7 — Coefficients as multipliers.** With standardised features, `exp(coefficient)` is the multiplier on predicted orders per one-standard-deviation increase in the feature. Write 3 in plain English.
+
+**Step 8 — Cross-check against week 3.** A Poisson model with predicted mean λ implies P(no orders) = exp(−λ). Use `exp(−predicted orders)` as a churn score on test and compute its ROC-AUC. Compare it with your week 3 classifier. If they're close, two very different methods agree. Search: "Poisson probability of zero events".
+
+**Check your work:**
+
+- The `orders_next90 == 0` ⇔ `churned == 1` assert passes.
+- On the training rows, the mean of the Poisson predictions is close to the mean of actual `orders_next90`. An unregularised Poisson GLM with an intercept matches them exactly, so a large gap means `alpha` is too strong or something is broken.
+- The GLMs never predict zero or negative values. Linear regression probably does: report how many.
+- Both GLMs beat `DummyRegressor` on deviance.
+- In the calibration table, predicted and actual are close in most groups. Note where they diverge. It's usually the top group.
+
+**Done when:** both models are logged with deviance and MAE, the calibration table is in the README, 3 coefficients are explained as multipliers, the step 8 cross-check is reported, and you can say in two sentences how an insurer uses the same frequency × severity set-up for claims.
+
+**Blind rebuild:** a pipeline with `PoissonRegressor`, mean Poisson deviance, and coefficients converted to multipliers with `np.exp`.
+
+**Interview question:** "How would you model the expected claim cost of a motor insurance policy?"
+
+### Week 5 — Clustering and customer segmentation
+
+**Objective:** group customers without a target, and turn the groups into something the business can act on.
+
+**In plain English:** everything up to now has been **supervised**: you had a label (churned or not) and learned to predict it. Clustering is **unsupervised**. There's no label, so you ask which customers look alike.
+
+- **K-means:** you choose k, the number of groups. It places k centre points, assigns each customer to the nearest centre, moves each centre to the middle of its customers, and repeats until nothing changes.
+- **Hierarchical clustering:** it starts with every customer alone and keeps merging the two closest groups. This builds a tree (a dendrogram), and you cut the tree at the height that gives sensible groups. It's slow on large data, so use a sample.
+- **PCA (principal component analysis):** it squeezes many related features into 2 or 3 new ones that keep most of the information. Use it to plot clusters on a flat chart and to spot redundant features.
+- **Scaling matters:** distances drive all of this. If spend is in pounds (0–50,000) and frequency is a count (1–30), spend dominates everything unless you standardise first.
+
+**Why it matters:** when a job ad says "segmentation", it almost always means this. The algorithm is the easy part. The skill is choosing features, deciding k, and naming segments so marketing can act on them.
+
+**Watch:** K-means Clustering · Hierarchical Clustering · PCA Main Ideas in only 5 minutes.
+
+**Read:**
+
+- ISLP Ch 12: 12.1 (the challenge of unsupervised learning), 12.2.1 (what principal components are), 12.2.3 (proportion of variance explained), and the scaling part of 12.2.4.
+- Ch 12: 12.4 in full (k-means, hierarchical clustering, practical issues).
+
+**Skip or skim:** skip 12.2.2, 12.2.5 and 12.3 (matrix completion).
+
+**Lab:** the PCA and k-means parts of the Ch 12 lab.
+
+**Build, step by step:**
+
+**Step 1 — One snapshot only.** Use the 2011-09-01 snapshot, the latest one. In the stacked table the same customer appears up to 16 times, which would distort clusters. Use three features: `recency_days`, `frequency_180d` and `monetary_180d`.
+
+**Step 2 — Transform.** Plot a histogram of each feature. Apply `np.log1p` to `frequency_180d` and `monetary_180d`, and to `recency_days` if it's also strongly skewed. Then standardise all three with `StandardScaler`. Long tails and unequal units both distort distances. Search: "k-means feature scaling log transform skewed".
+
+**Step 3 — Classic RFM scores first (the dumb baseline).** Score each customer 1–5 on R, F and M by quintile (`pd.qcut`). This rule-based method is what many retailers already use. Your clusters should show something these scores don't. Search: "RFM analysis quintile scoring".
+
+**Step 4 — K-means.** Run k = 2 to 10 with `n_init=10` and a fixed `random_state`. Plot inertia (the elbow) and `silhouette_score` for each k. They often disagree, and that's normal.
+
+**Step 5 — Choose k and test stability.** Choose k with a business reason, for example "marketing can run 4–6 campaigns", supported by the plots. Then rerun k-means at that k with 5 different `random_state` values and compare the labels pairwise with `adjusted_rand_score`. Values near 1 mean the segments are stable. Low values mean the segments depend on luck. Search: "cluster stability adjusted rand index".
+
+**Step 6 — Hierarchical clustering.** On a random sample of about 2,000 customers, use scipy's `linkage(method="ward")` and draw the `dendrogram`, then cut it at your k. Compare with the k-means labels on the same customers using `adjusted_rand_score` and `pd.crosstab`. Search: "scipy hierarchical clustering ward dendrogram fcluster".
+
+**Step 7 — Profile the segments.** One row per segment: size and percentage of customers, median recency, frequency and monetary value **in original units, not scaled**, and churn rate from this snapshot's label. Give each segment a name and one action, for example "Lapsed high-value: win-back offer".
+
+**Step 8 — PCA plot.** Reduce the three scaled features to 2 components and plot customers coloured by segment. Report the explained variance ratio. With only 3 features, PCA here is mainly a way to visualise.
+
+**Step 9 — No scaling.** Rerun k-means on the raw features and describe what changes. Usually `monetary_180d` alone decides the segments.
+
+**Check your work:**
+
+- Each customer appears once in the clustering table.
+- No segment is smaller than about 2% of customers. If one is, inspect its members, since they're usually outliers. Decide whether to cap extreme values, and document the decision.
+- The profiles make sense. A segment with recent, frequent buyers should have a lower churn rate than a lapsed segment. If it doesn't, check that you joined the right labels.
+- Medians in the profile table are in pounds and days, not standardised units.
+- Stability check: adjusted Rand index between the 5 runs is reported.
+
+**Done when:** the README has the RFM baseline comparison, your reason for k with the elbow and silhouette plots, the stability result, the k-means vs hierarchical comparison, the segment profile table with names and actions, the PCA plot, and one sentence on what scaling changed.
+
+**Blind rebuild:** k-means from scratch in numpy (assign each point to the nearest centre, recompute centres, stop when assignments stop changing), then check it against scikit-learn.
+
+**Interview question:** "Marketing wants customer segments. How would you build them, and how would you know they're any good?"
+
+### Week 6 — Hypothesis testing and experiment design
+
+**Objective:** decide whether a difference is real, and design an experiment that can actually detect the effect you care about.
+
+**In plain English:**
+
+- **Null hypothesis:** the "nothing is going on" assumption, for example that the new email doesn't change repurchase rates.
+- **P-value:** if the null were true, how likely is data at least this extreme? A small p-value means your data would be unusual if nothing were going on. It is **not** the probability that the null is true, and it says nothing about how big or useful the effect is.
+- **Effect size and confidence interval:** how big the difference is, and the range it plausibly lies in. Always report these alongside the p-value.
+- **Type I error (false alarm):** claiming an effect that isn't there. Its rate, α, is usually set at 5%.
+- **Type II error (missed effect):** failing to detect a real one. **Power** = 1 − that rate, and you usually aim for 80%.
+- **A/B test:** customers are randomly split into control and treatment. Because the split is random, the change is the only systematic difference, which is what lets you claim cause rather than just correlation.
+- **Power analysis:** done *before* the test, it tells you how many customers you need per group to detect the smallest effect worth acting on. Too few customers and a real effect goes unnoticed.
+- **Peeking:** checking results daily and stopping as soon as p < 0.05. This inflates false alarms well above 5%.
+- **Multiple testing:** run 20 tests at 5% and you expect one false alarm even when nothing is real. Bonferroni and Benjamini–Hochberg corrections adjust for this.
+
+**Which test to use:**
+
+| Comparing | Test |
+| --- | --- |
+| Two group averages (e.g. order value) | Welch's t-test |
+| Two rates or proportions (e.g. conversion) | Two-proportion z-test, or chi-square |
+| Skewed amounts (e.g. spend) | Bootstrap confidence interval, or Mann–Whitney |
+
+**Why it matters:** NFU's ad asks for "statistical methods and experimental design". Expect questions like "the treatment converted 0.3 points better, should we launch?"
+
+**Watch:** Hypothesis Testing and the Null Hypothesis · p-values: what they are and how to interpret them · Statistical Power · Power Analysis · False Discovery Rates.
+
+**Read:**
+
+- ISLP Ch 13: 13.1 (a quick review of hypothesis testing) and 13.2 (the challenge of multiple testing).
+- Ch 13: from 13.3, only the Bonferroni part. From 13.4, only the Benjamini–Hochberg procedure.
+- Optional, if you can borrow it: *Trustworthy Online Controlled Experiments* (Kohavi, Tang & Xu), chapters 1–2. It's the standard industry reference on A/B testing.
+
+**Skip or skim:** skim 13.5 (permutation tests). Skip the rest of 13.3.
+
+**Lab:** the first part of the Ch 13 lab (one-sample t-tests and Bonferroni). Skip the rest.
+
+**Build, part A: tests on real data** (Online Retail II)
+
+**Important before you start:** most tests assume independent observations. Invoices from the same customer aren't independent, since a big buyer contributes many similar invoices. So aggregate to **one value per customer** first, and test customers, not invoices. Search: "t-test independence assumption repeated measures".
+
+1. **Order value, UK vs non-UK.** Order value is the sum of `line_value` per invoice. Average it per customer, then compare UK and non-UK customers with Welch's t-test (`scipy.stats.ttest_ind(..., equal_var=False)`). Then compute a bootstrap 95% confidence interval for the difference in means: resample customers with replacement 5,000 times and take the 2.5th and 97.5th percentiles of the difference. Search: "bootstrap confidence interval difference in means python".
+2. **Cancellation rate between two countries.** Take the two countries with the most customers. Per customer, calculate the share of their invoices that are cancellations, then compare the two countries with Welch's t-test as in item 1. Separately, build the invoice-level 2×2 table (cancelled or not, by country) and run `scipy.stats.chi2_contingency`. In the README, explain why the invoice-level chi-square result is less trustworthy than the customer-level result.
+3. **Multiple testing.** Compare each of the 20 countries with the most customers against all other customers on average order value per customer. Collect the 20 p-values and apply Benjamini–Hochberg (`statsmodels.stats.multitest.multipletests(..., method="fdr_bh")`). Count how many results are significant before and after correction.
+
+**Build, part B: simulate an A/B test** in numpy. Scenario: a retention email, where the baseline 90-day repurchase rate comes from your week 1 data and the true lift is 2 percentage points.
+
+1. **Sample size.** Use statsmodels `proportion_effectsize(p_treatment, p_control)` and `NormalIndPower().solve_power(effect_size=..., alpha=0.05, power=0.8)` to get the number of customers needed per group. `p_control` is the 90-day repurchase rate (1 − churn rate) from your week 1 snapshot, and `p_treatment = p_control + 0.02`.
+2. **Power check.** Simulate 1,000 experiments at that sample size with the true lift: draw outcomes with `np.random.binomial` for each group, then run a two-proportion z-test (`statsmodels.stats.proportion.proportions_ztest`). Count the share with p < 0.05.
+3. **False alarm check.** Repeat with **no** lift (both groups at `p_control`) and count the share with p < 0.05.
+4. **Peeking.** With no lift, spread each experiment's customers evenly over 20 days. After each day, run the test on all customers so far, and record whether p < 0.05 happens on **any** day. Over 1,000 experiments, that share is the false alarm rate under peeking. Search: "peeking problem A/B testing simulation", "optional stopping inflates false positive rate".
+
+**Check your work:**
+
+- Every test in part A uses one row per customer, apart from the chi-square in item 2, which is deliberately invoice-level.
+- The Welch t-test and the bootstrap confidence interval agree on the direction of the difference.
+- Your hand-built z-test (the blind rebuild) matches `proportions_ztest` to at least 4 decimal places.
+- With 1,000 simulations, random noise alone moves the results a little. The power check should land roughly between 77% and 83%, and the false alarm check roughly between 3.6% and 6.4%. Further outside those ranges usually means a bug.
+- The peeking false alarm rate is clearly above 5%.
+
+**Done when:** part A is written up in plain English with effect sizes and confidence intervals, not just p-values, including why you tested customers rather than invoices; part B reports the sample size, power, false alarm rate and peeking rate; and you can explain every number without notes.
+
+**Blind rebuild:** a two-proportion z-test by hand in numpy (pooled proportion, standard error, z, then the p-value with `scipy.stats.norm`), checked against statsmodels.
+
+**Interview question:** "An A/B test lifted conversion from 5.0% to 5.3%, p = 0.04. Should we launch?" A good answer covers the confidence interval, whether the sample size was planned, peeking, how many metrics were tested, and whether 0.3 points is worth the cost.
+
+### Week 7 — Buffer
+
+**Objective:** consolidate before the project, not add material.
+
+**Do:** catch up on anything unfinished. Redo the weeks 1–6 blind rebuilds, timed. Do one mock interview on ML and statistics fundamentals, including one A/B test question, with a coding question you must attempt in code even if it's messy.
+
+**Watch:** nothing new. Rewatch the video for any topic you couldn't explain in your 5-line summaries.
+
+**Ship the project.** Write the README in this order, so a hiring manager gets the point from section 1 alone:
+
+1. **Summary:** one paragraph with the headline result, for example the churn model's test ROC-AUC and the campaign value at the chosen threshold.
+2. **Data and cleaning:** the cleaning table with rows removed per rule.
+3. **Snapshot design:** the timeline diagram, windows, population and label definition.
+4. **Validation design:** the split table, the gap rule, and the random vs time-based comparison.
+5. **Churn model:** model comparison, chosen model and why, test result, profit curve, SHAP drivers.
+6. **Customer value:** frequency and severity GLMs, deviance, calibration table, the step 8 cross-check.
+7. **Segmentation:** the profile table with names and actions.
+8. **Statistical tests and A/B simulation:** part A findings and part B numbers.
+9. **Limitations:** two years of data, tenure capped at December 2009, cost-model values that are assumptions, a single retailer.
+10. **How to reproduce:** installation, then the notebooks in numbered order, then `pytest`.
+
+Then do a fresh-clone test: clone the repo into a new folder, create a new virtual environment, follow your own README, and check that everything runs and the numbers match. Add the project to your CV with the headline result.
+
+**Done when:** all 6 blind rebuilds pass from an empty file in under 20 minutes each. Start applying selectively again from here.
+
+## Week 8 — Project setup (half week)
+
+**Objective:** a repo you'd be happy for an interviewer to open, before any ML happens.
+
+**Read:** the Hugging Face `datasets` quickstart, and the pytest docs on fixtures.
+
+**Build, step by step:**
+
+**Step 1 — Repo.** Same practice as weeks 1–7: `src/` for logic, numbered notebooks, `tests/`, `results.csv`. Folders inside `src/`: `data/`, `extraction/`, `retrieval/`, `generation/`, `eval/`, `api/`.
+
+**Step 2 — WikiANN loader.** Load the English, German, Hindi and Arabic configurations from the Hugging Face hub (the dataset is published as `unimelb-nlp/wikiann`; if that name fails, search the hub for "wikiann"). Read the label names from the dataset's `features` rather than hard-coding them. Return a list of simple objects, for example a dataclass `NerSentence(tokens, tags, lang)`.
+
+**Step 3 — XQuAD loader.** Load `google/xquad` with configurations such as `xquad.de`. XQuAD has only a `validation` split, with 240 paragraphs and 1,190 questions per language. The questions are translations of the same English questions and share an `id` across languages. Return `QAItem(id, question, context, answers, lang)`, and give each unique paragraph a `context_id` so retrieval can be scored later.
+
+**Step 4 — Evaluation skeleton and results log.** Every metric function takes predictions and gold labels and returns one number per language. Every experiment appends a row to `results.csv`.
+
+**Check your work:** write down the train, validation and test sizes per language for WikiANN, since Hindi's training set is much smaller than the others. Each XQuAD language should have 240 unique paragraphs. The same question `id` returns the same question, translated, in every language: print one to confirm.
+
+**Done when:** `pytest` passes, both datasets load for all 4 languages, and the split sizes are in the README.
+
+**Blind rebuild:** none this week.
+
+## Phase 2 — Classic NLP foundations (weeks 9–11)
+
+### Week 9 — Tokenization and transformers
+
+**Objective:** explain what a transformer does to text before any training happens, and why multilingual tokenization is a real problem.
+
+**Read:**
+
+- Jay Alammar, *The Illustrated Transformer*.
+- Hugging Face LLM Course: the chapters on transformer models, using Transformers, and the Tokenizers library.
+
+**Build, step by step:**
+
+1. Take 500 sentences per language from the WikiANN test sets. They're already split into words, so the word count is known.
+2. Tokenise them with `bert-base-multilingual-cased` (mBERT) and `xlm-roberta-base` (XLM-R) using `AutoTokenizer`. For each language and tokenizer, calculate: **fertility** = subword tokens ÷ words, excluding special tokens such as `[CLS]` and `<s>`; the **unknown-token rate** = share of tokens equal to the tokenizer's `unk_token`; and the share of words split into 3 or more pieces.
+3. Print 5 Hindi and 5 Arabic words with their subword pieces from both tokenizers.
+4. Run one sentence through `AutoModel` for `xlm-roberta-base`. Check that `last_hidden_state` has shape `[1, sequence_length, 768]`. Build a sentence embedding by mean pooling that uses the attention mask, so padding tokens aren't averaged in.
+
+Search: "tokenizer fertility multilingual", "SentencePiece vs WordPiece", "mean pooling attention mask transformers".
+
+**Check your work:** English should have about the lowest fertility for both tokenizers. If it doesn't, check that you excluded special tokens. Hand-count the pieces for 2 printed words and confirm they match your fertility code.
+
+**Done when:** the fertility, unknown-rate and split-word table per language × tokenizer is in the README, with 3 sentences on why the numbers differ and what that means for cost (more tokens per word means more compute) and accuracy.
+
+**Blind rebuild:** load a tokenizer and model, run a sentence through, and pull out one embedding per token and one per sentence (mean pooling).
+
+**Interview question:** "Why would the same model perform worse on Hindi than English?"
+
+### Week 10 — Fine-tuning for token classification
+
+**Objective:** fine-tune a transformer for NER, and understand the subword label-alignment problem.
+
+**Read:**
+
+- Hugging Face LLM Course: the fine-tuning chapter, then the token classification section of the classical NLP tasks chapter.
+- The `seqeval` README, for entity-level vs token-level F1.
+
+**Build, step by step:**
+
+1. **Label alignment, written by you.** Tokenise sentences with `is_split_into_words=True`, then use the tokenizer's `word_ids()`. The first subword of each word gets that word's label. Later subwords of the same word, and special tokens, get -100, which the loss function ignores. Test it with pytest on one hand-made sentence where you know the right output. Search: "token classification label alignment word\_ids -100".
+2. **Train.** Use `AutoModelForTokenClassification` with `xlm-roberta-base`, `DataCollatorForTokenClassification` and the `Trainer`, on about 10,000 English training sentences. Starting settings: 3 epochs, learning rate between 2e-5 and 5e-5, batch size 16.
+3. **Evaluate at word level.** Keep only the predictions at positions whose label isn't -100, which turns them back into one prediction per word. Then compute entity-level precision, recall and F1 with `seqeval` on the English test set.
+4. **Error analysis.** Sort 20 errors into four types: wrong boundary, wrong entity type, missed entity, and spurious entity.
+
+**Check your work:** print 5 aligned sentences token by token next to their labels and read them. For every sentence, the number of labels that aren't -100 equals the number of words. Training loss falls. English entity F1 should be well above 0.5. A low score is almost always an alignment bug.
+
+**Done when:** English test F1 is logged, the alignment test passes, and the 20 errors are categorised in the README.
+
+**Blind rebuild:** the label-alignment function, plus the training loop setup with the Trainer API.
+
+**Interview question:** "Walk me through fine-tuning a model for NER. What goes wrong with subword tokens?"
+
+### Week 11 — Cross-lingual transfer
+
+**Objective:** measure how far an English-trained model transfers, and what multilingual training buys.
+
+**Read:**
+
+- The XTREME benchmark paper (Hu et al., 2020): the introduction and the cross-lingual transfer results.
+- The XLM-R paper (Conneau et al., 2019): the introduction and the "curse of multilinguality" discussion.
+
+**Build, step by step:**
+
+1. **Zero-shot:** evaluate the week 10 English model, with no further training, on the German, Hindi and Arabic test sets.
+2. **Multilingual:** train a new model on an equal number of sentences per language, for example 5,000 each (Hindi's training set limits the size). Evaluate on all 4 test sets.
+3. **Per-language and per-type table:** F1 for each language, for zero-shot vs multilingual, broken down by PER, ORG and LOC (`seqeval`'s `classification_report`).
+4. **Explain the gap** in 3–5 sentences, linking it to your week 9 fertility numbers, script differences and how much pretraining data each language likely had.
+
+**Check your work:** English F1 in the multilingual model should stay close to the English-only model. A large drop usually means the sampling or label mapping is wrong for one language. Zero-shot scores should be lower than multilingual ones for every non-English language.
+
+**Done when:** the zero-shot vs multilingual table per language and entity type is in the README, with the written explanation.
+
+**Blind rebuild:** the per-language evaluation function using `seqeval`.
+
+**Interview question:** "You have labels in English only. How do you extract entities in Arabic?"
+
+## Phase 3 — Retrieval and evaluation (weeks 12–13)
+
+### Week 12 — Retrieval and reranking
+
+**Objective:** build and measure sparse retrieval, dense retrieval and reranking, including cross-lingual queries.
+
+**Read:**
+
+- The sentence-transformers docs: the pages on semantic search, retrieve & re-rank, and cross-encoders.
+- The Sentence-BERT paper (Reimers & Gurevych, 2019): the introduction and the bi-encoder vs cross-encoder motivation.
+- BM25: any clear explainer on term frequency saturation and document length normalisation.
+
+**Build, step by step:**
+
+1. **Corpus, queries and gold answers.** The corpus is the 240 unique XQuAD paragraphs per language. The queries are the XQuAD questions. For a same-language query, the gold paragraph is the one the question came from. For a cross-lingual query (an English question searched against German paragraphs), the gold paragraph is the German paragraph of the question with the same `id`.
+2. **BM25** with `rank_bm25` (`BM25Okapi`), using lowercased whitespace tokens.
+3. **Bi-encoder** with `intfloat/multilingual-e5-base` through sentence-transformers. This model requires the prefix `"query: "` on questions and `"passage: "` on paragraphs. Without them, scores drop. Normalise the embeddings and rank by cosine similarity. Search: "multilingual-e5 query passage prefix".
+4. **Reranker.** Take the bi-encoder's top 20 and rescore each (question, paragraph) pair with a multilingual cross-encoder, then sort by the new score, highest first. Search the Hugging Face hub for "multilingual reranker cross-encoder", for example `BAAI/bge-reranker-v2-m3`.
+5. **Metrics.** recall@1, recall@5 and MRR@10 for each retriever × language × query type (same-language, and English to each other language). Also measure the average time per query for each stage.
+
+Search: "recall at k MRR information retrieval", "retrieve and rerank sentence-transformers".
+
+**Check your work:**
+
+- Random retrieval scores recall@5 = 5 ÷ 240 ≈ 2%. BM25 on cross-lingual queries should be near that, since English words rarely appear in German paragraphs. If it's much higher, check you're searching the right language's corpus.
+- With only 240 paragraphs, good retrievers will have high recall@5, so recall@1 and MRR are the numbers that separate them.
+- The reranker should improve recall@1 over the bi-encoder alone. If it makes it worse, check the pair order (question first) and that you sorted highest score first.
+
+**Done when:** the table of recall@1, recall@5 and MRR per retriever × language × query type is in the README, with latency per stage, and you can explain why BM25 fails cross-lingually.
+
+**Blind rebuild:** the cross-encoder rerank function, plus recall@k and MRR. This is exactly the Elsevier coding question.
+
+**Interview question:** "Why not just use a cross-encoder for everything?"
+
+### Week 13 — Generation and faithfulness
+
+**Objective:** generate grounded answers and build a faithfulness metric you can trust.
+
+**Read:**
+
+- The RAGAS paper (Es et al., 2023): how faithfulness and answer relevance are defined.
+- *AI Engineering* (Chip Huyen): the chapters on evaluation methodology and AI-as-a-judge.
+
+**Build:**
+
+1. **Generation.** For 100 questions per language (to control cost), give the LLM the top 3 reranked paragraphs. Instruct it to answer only from them and to reply "not in context" if the answer isn't there. Use temperature 0.
+2. **Correctness.** XQuAD gold answers are short spans, while LLM answers are usually full sentences. Measure both SQuAD-style exact match and token F1 (Hugging Face `evaluate`, metric "squad") and an LLM-judged correctness score ("does this answer state the same fact as the gold answer?"). Explain in the README why the two differ.
+3. **Faithfulness from scratch.** (a) A claim-extraction prompt returns the answer's atomic claims as a JSON list. (b) A verification prompt takes one claim and the context and returns "supported" or "not supported". (c) Faithfulness = supported claims ÷ total claims. Decide and document how you score answers with no claims, such as "not in context".
+4. **Validate the judge.** Label 50 claims yourself as supported or not, then compare with the judge: percent agreement and Cohen's kappa (`sklearn.metrics.cohen_kappa_score`).
+5. **Adversarial check.** Take 10 correct answers and add one invented claim to each. Their faithfulness scores must drop.
+
+Search: "RAGAS faithfulness claim decomposition", "LLM as a judge agreement with human labels", "Cohen's kappa interpretation".
+
+**Check your work:** running the judge twice on the same inputs at temperature 0 gives nearly the same scores. All 10 corrupted answers score lower than their originals. Kappa between 0.61 and 0.80 is conventionally called substantial agreement. Below 0.4, fix the verification prompt before trusting any faithfulness number.
+
+**Done when:** faithfulness and both correctness measures per language are in the README, with judge agreement, kappa, the adversarial result, and 5 failure cases explained.
+
+**Blind rebuild:** the faithfulness scorer (claim extraction prompt, verification prompt, scoring). The second Elsevier coding question.
+
+**Interview question:** "How do you know your LLM judge is right?"
+
+## Phase 4 — Senior judgement and interview conversion (weeks 14–16)
+
+### Week 14 — LLM extraction vs fine-tuned model
+
+**Objective:** make a measured, defensible "which would you ship" decision. This is the senior part.
+
+**Read:**
+
+- *AI Engineering*: the chapters on prompt engineering (structured outputs) and on finetuning vs prompting.
+- The Pydantic docs on validation, or your LLM provider's structured output docs.
+
+**Build, step by step:**
+
+1. **Schema.** In Pydantic: `Entity(text: str, type: Literal["PER", "ORG", "LOC"])` and `Extraction(entities: list[Entity])`.
+2. **Call.** Send the sentence and request JSON matching the schema, using your provider's structured output or JSON mode. Validate with `Extraction.model_validate_json`. If validation fails, retry once with the error message included in the prompt. Count how often validation fails.
+3. **Convert back to word-level BIO tags.** Match each entity's text to a span of the sentence's words and tag it B-/I-, so `seqeval` can score the LLM on exactly the same test sets as week 11. This is the hardest step. Document how you handle an entity that appears twice, or text that doesn't match any word span.
+4. **Measure** on 200 test sentences per language: F1, latency (median and 95th percentile), and cost per 1,000 sentences from token counts × your provider's price.
+5. **Same 200 sentences through your fine-tuned XLM-R model**, measuring F1 and latency on CPU and on GPU.
+6. **Decision memo.** For 1,000, 100,000 and 10 million sentences a month, which would you ship, and why? Cover accuracy per language, cost, latency, and the effort of maintaining each.
+
+Search: "pydantic model\_validate\_json", "structured outputs JSON schema LLM", "BIO tagging span conversion".
+
+**Check your work:** hand-check 10 conversions from LLM entities to BIO tags. Report the validation failure rate. Measure latency after a few warm-up calls, so model loading isn't counted.
+
+**Done when:** the comparison table and the decision memo are in the README.
+
+**Blind rebuild:** the structured extraction call with schema validation and retry.
+
+**Interview question:** "Build a multilingual extraction system." Answer it fully, using your own numbers.
+
+### Week 15 — Serve and harden
+
+**Objective:** turn notebooks into a system someone else could run.
+
+**Read:** the FastAPI docs on dependencies and testing.
+
+**Build, step by step:**
+
+1. **App.** Load models once at startup with FastAPI's `lifespan`, not once per request. Inject the extractor, retriever and LLM client into endpoints with `Depends`. Define request and response models in Pydantic.
+2. **Endpoints.** `/extract` takes text and a language and returns entities. `/ask` takes a question and returns the answer, the ids of the paragraphs used, and the faithfulness score.
+3. **Tests.** Use `TestClient`, and replace the real LLM client with a fake one via `app.dependency_overrides`, so tests run without network calls or cost.
+4. **One command for evaluation**, for example `python -m eval.run_all`, which regenerates every results table.
+
+Search: "FastAPI lifespan load model", "FastAPI dependency\_overrides testing".
+
+**Done when:** a fresh clone into a new folder with a new virtual environment, following only the README, passes all tests and reproduces your results tables.
+
+**Blind rebuild:** a FastAPI endpoint with an injected dependency and a mocked test.
+
+### Week 16 — Interview conversion
+
+**Objective:** make everything you built come out of your mouth clearly under pressure.
+
+**Build:**
+
+- Redo the two Elsevier coding tasks, blind and timed at 30 minutes each.
+- Write a 1-page system design summary of this project: problem, decisions, alternatives rejected, results, what you'd change.
+- Rewrite your two main Cromwell projects in the same format.
+- Rewrite your Cromwell email classifier story: the traditional baseline, why you moved to an LLM, and what you gained and lost in accuracy, cost, latency and control. Answer out loud: "Why did you replace a traditional classifier with an LLM, and was it worth it?"
+- Do 1 traditional data science case out loud: "Segment our customers for a campaign, and design the test that proves the campaign worked." Use your weeks 5 and 6 work.
+- Do 3 design questions out loud: multilingual extraction, RAG over scientific papers, and evaluating an LLM feature in production.
+- Do 2 mock interviews (with Claude or a person).
+
+**Done when:** you can talk about each project for 5 minutes without notes, and handle 3 follow-up questions.
+
+## Progress tracker
+
+Update the status and key result every Sunday during your retro.
+
+| Week | Component | Blind rebuild | Key result | Status |
+| --- | --- | --- | --- | --- |
+| 1 | Churn dataset + baseline | Split + pipeline + logistic regression |  | Not started |
+| 2 | Churn: time-based validation, threshold | Metrics from confusion matrix, manual k-fold |  | Not started |
+| 3 | Churn: model comparison, drivers, SHAP | Gini impurity + best split |  | Not started |
+| 4 | Customer value: Poisson and Gamma GLMs | Poisson GLM, deviance, multipliers |  | Not started |
+| 5 | RFM segmentation: k-means, hierarchical, PCA | K-means from scratch in numpy |  | Not started |
+| 6 | Hypothesis tests + simulated A/B test | Two-proportion z-test by hand |  | Not started |
+| 7 | Buffer, mock, ship churn README | Weeks 1–6 rebuilds, timed |  | Not started |
+| 8 | Repo, loaders, eval skeleton | — |  | Not started |
+| 9 | Tokenizer analysis | Embeddings + pooling |  | Not started |
+| 10 | English NER fine-tune | Label alignment |  | Not started |
+| 11 | Cross-lingual NER | Per-language seqeval |  | Not started |
+| 12 | Retrieval + reranking | Cross-encoder rerank, recall@k, MRR |  | Not started |
+| 13 | Generation + faithfulness | Faithfulness scorer |  | Not started |
+| 14 | LLM vs fine-tuned | Structured extraction |  | Not started |
+| 15 | FastAPI service + tests | Endpoint + mocked test |  | Not started |
+| 16 | Interview conversion | Both Elsevier tasks, timed |  | Not started |
