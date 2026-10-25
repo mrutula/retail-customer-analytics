@@ -1,5 +1,10 @@
 # retail-customer-analytics
 
+# Definition 
+
+- Customer is anyone who has made a valid transaction with us
+- if a customer hasnt made a purchase in the 90 days after cut off date then considered as churned.
+- 
 #### To install the repo locally 
 1) clone the repo
 2) cd retail-customer-analytics
@@ -29,4 +34,3 @@ The following cleansing down
 
 
 
-√
